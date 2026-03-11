@@ -1,0 +1,10 @@
+langchain
+langchain-openai
+langgraph
+openai
+skyfield
+requests
+python-dotenv
+flask
+flask-cors
+chromadb

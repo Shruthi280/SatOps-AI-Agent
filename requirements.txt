@@ -8,3 +8,5 @@ python-dotenv
 flask
 flask-cors
 chromadb
+langchain-google-genai
+langchain-groq

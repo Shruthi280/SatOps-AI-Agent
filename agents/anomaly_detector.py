@@ -11,7 +11,7 @@ from tools.telemetry_simulator import (
 
 load_dotenv()
 
-def analyze_telemetry(reading: dict) -> dict:
+def analyze_telemetry(reading: dict, satellite_name: str = "CARTOSAT-3") -> dict:
     """
     Analyzes satellite telemetry for anomalies.
     Step 1: Rule-based threshold check
@@ -35,6 +35,8 @@ def analyze_telemetry(reading: dict) -> dict:
 
     prompt = ChatPromptTemplate.from_template("""
 You are SatOps Anomaly Detector, an expert satellite health monitoring AI for Dhruva Space.
+
+Satellite under monitoring: {satellite}
 
 A rule-based system flagged these sensors as outside normal range:
 {flags}
@@ -65,10 +67,10 @@ Severity must be exactly one of: INFO, WARNING, CRITICAL
     }
 
     response = chain.invoke({
-        "flags": json.dumps(flags, indent=2),
-        "telemetry": json.dumps(clean_telemetry, indent=2)
+    "flags": json.dumps(flags, indent=2),
+    "telemetry": json.dumps(clean_telemetry, indent=2),
+    "satellite": satellite_name
     })
-
     # ── Step 3: Parse LLM response ─────────────────────────────
     try:
         content = response.content.strip()
@@ -118,14 +120,14 @@ if __name__ == "__main__":
     # Test 1: Normal telemetry
     print("--- Test 1: Normal Telemetry ---")
     normal = generate_normal_reading()
-    result = analyze_telemetry(normal)
+    result = analyze_telemetry(normal,satellite_name="CARTOSAT-3")
     print(f"Status  : {result['status']}")
     print(f"Message : {result.get('message', 'N/A')}\n")
 
     # Test 2: Battery fault
     print("--- Test 2: Battery Fault ---")
     faulty = generate_faulty_reading("battery_fault")
-    result = analyze_telemetry(faulty)
+    result = analyze_telemetry(faulty,satellite_name="CARTOSAT-3")
     ai = result["ai_analysis"]
     print(f"Status          : {result['status']}")
     print(f"Flagged Sensors : {[f['sensor'] for f in result['flagged_sensors']]}")
@@ -142,7 +144,7 @@ if __name__ == "__main__":
     # Test 3: Overheating
     print("--- Test 3: Overheating ---")
     hot = generate_faulty_reading("overheating")
-    result = analyze_telemetry(hot)
+    result = analyze_telemetry(hot,satellite_name="CARTOSAT-3")
     ai = result["ai_analysis"]
     print(f"Status          : {result['status']}")
     print(f"Flagged Sensors : {[f['sensor'] for f in result['flagged_sensors']]}")
@@ -155,10 +157,26 @@ if __name__ == "__main__":
     # Test 4: Attitude fault
     print("--- Test 4: Attitude Fault ---")
     attitude = generate_faulty_reading("attitude_fault")
-    result = analyze_telemetry(attitude)
+    result = analyze_telemetry(attitude,satellite_name="CARTOSAT-3")
     ai = result["ai_analysis"]
     print(f"Status          : {result['status']}")
     print(f"Flagged Sensors : {[f['sensor'] for f in result['flagged_sensors']]}")
     print(f"Component       : {ai['affected_component']}")
     print(f"Action          : {ai['suggested_action']}")
     print(f"Human Review    : {'⚠️  YES — ' + ai.get('review_reason','') if ai['human_review_required'] else '✅ Not required'}")
+
+# Sanity check — verify AI flagged the right sensors
+def verify_result(result, expected_sensors, expected_severity):
+    flagged = [f['sensor'] for f in result['flagged_sensors']]
+    actual_severity = result['status']
+    
+    sensors_correct = all(s in flagged for s in expected_sensors)
+    severity_correct = actual_severity == expected_severity
+    
+    print(f"  Sensors correct  : {'✅' if sensors_correct else '❌'}")
+    print(f"  Severity correct : {'✅' if severity_correct else '❌'}")
+
+print("\n--- Sanity Checks ---")
+faulty = generate_faulty_reading("battery_fault")
+result = analyze_telemetry(faulty, satellite_name="CARTOSAT-3")
+verify_result(result, ["battery_voltage", "solar_panel_output"], "CRITICAL")

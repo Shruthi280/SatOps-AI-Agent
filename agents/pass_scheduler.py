@@ -39,7 +39,7 @@ def compute_passes(satellite_name: str, hours_ahead: int = 24) -> dict:
     )
 
     # Step 4: Search for passes in next N hours
-    now = datetime.now(timezone.utc)
+    now = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
     t0 = ts.from_datetime(now)
     t1 = ts.from_datetime(now + timedelta(hours=hours_ahead))
 

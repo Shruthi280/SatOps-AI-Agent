@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone,timedelta
 from dotenv import load_dotenv
 from agents.pass_scheduler import recommend_best_pass
 from agents.anomaly_detector import analyze_telemetry
@@ -7,6 +7,8 @@ from agents.eo_task_planner import plan_eo_task
 from tools.telemetry_simulator import generate_normal_reading, generate_faulty_reading
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 load_dotenv()
 
@@ -32,7 +34,7 @@ def run_full_mission(
     print(f"{'='*55}")
     report = {
         "satellite": satellite_name,
-        "mission_start": datetime.now(timezone.utc).isoformat(),
+        "mission_start": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
         "agents": {}
     }
 

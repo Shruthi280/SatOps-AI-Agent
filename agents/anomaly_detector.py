@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone,timedelta
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
@@ -10,6 +10,8 @@ from tools.telemetry_simulator import (
 )
 
 load_dotenv()
+IST = timezone(timedelta(hours=5, minutes=30))
+
 
 def analyze_telemetry(reading: dict, satellite_name: str = "CARTOSAT-3") -> dict:
     """
@@ -27,7 +29,7 @@ def analyze_telemetry(reading: dict, satellite_name: str = "CARTOSAT-3") -> dict
             "status": "NOMINAL",
             "message": "All parameters within normal range",
             "human_review_required": False,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
         }
 
     # ── Step 2: LLM analysis ───────────────────────────────────

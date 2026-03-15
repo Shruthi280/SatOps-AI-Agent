@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone,timedelta
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
@@ -7,6 +7,7 @@ from tools.tle_fetcher import fetch_tle, get_available_satellites
 
 load_dotenv()
 
+IST = timezone(timedelta(hours=5, minutes=30))
 # EO satellite capabilities knowledge base
 # In V2 this will be replaced by RAG over actual satellite spec docs
 SATELLITE_CAPABILITIES = {
@@ -167,7 +168,7 @@ Respond ONLY in this exact JSON format, no extra text:
         "objective": objective,
         "satellite_capabilities": sat_caps,
         "task_plan": llm_output,
-        "planned_at": datetime.now(timezone.utc).isoformat()
+        "planned_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
     }
 
 

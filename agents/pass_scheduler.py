@@ -1,6 +1,14 @@
 from skyfield.api import load, wgs84, EarthSatellite
 from datetime import datetime, timezone, timedelta
 from tools.tle_fetcher import fetch_tle
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from dotenv import load_dotenv
+import json
+
+load_dotenv()
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 # Dhruva Space HQ — Hyderabad
 GROUND_STATION = {
@@ -10,13 +18,9 @@ GROUND_STATION = {
     "elevation_m": 542
 }
 
-MIN_ELEVATION_DEG = 10  # Minimum elevation to establish contact
+MIN_ELEVATION_DEG = 10
 
 def compute_passes(satellite_name: str, hours_ahead: int = 24) -> dict:
-    """
-    Compute satellite passes over Dhruva's ground station.
-    Returns next N passes with AOS, LOS, max elevation.
-    """
     # Step 1: Fetch TLE
     tle_data = fetch_tle(satellite_name)
     if "error" in tle_data:
@@ -39,11 +43,10 @@ def compute_passes(satellite_name: str, hours_ahead: int = 24) -> dict:
     )
 
     # Step 4: Search for passes in next N hours
-    now = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+    now = datetime.now(timezone.utc)
     t0 = ts.from_datetime(now)
     t1 = ts.from_datetime(now + timedelta(hours=hours_ahead))
 
-    # Find events: 0=AOS, 1=Max elevation, 2=LOS
     times, events = satellite.find_events(
         ground_station, t0, t1,
         altitude_degrees=MIN_ELEVATION_DEG
@@ -60,32 +63,31 @@ def compute_passes(satellite_name: str, hours_ahead: int = 24) -> dict:
     # Step 5: Group into passes (AOS → Max → LOS)
     passes = []
     current_pass = {}
+    aos_utc = None  # store raw UTC for duration calculation
 
     for t, event in zip(times, events):
-        dt = t.utc_datetime()
+        dt = t.utc_datetime()  # always UTC from skyfield
         diff = satellite - ground_station
         topocentric = diff.at(t)
         alt, az, distance = topocentric.altaz()
 
         if event == 0:  # AOS
+            aos_utc = dt  # save raw UTC for duration math
             current_pass = {
-                "aos": dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "aos": dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
                 "aos_azimuth": round(az.degrees, 1)
             }
+
         elif event == 1:  # Max elevation
             current_pass["max_elevation"] = round(alt.degrees, 1)
-            current_pass["max_el_time"] = dt.strftime("%H:%M:%S UTC")
+            current_pass["max_el_time"] = dt.astimezone(IST).strftime("%H:%M:%S IST")
+
         elif event == 2:  # LOS
-            current_pass["los"] = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            current_pass["los"] = dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST")
             current_pass["los_azimuth"] = round(az.degrees, 1)
 
-            # Calculate pass duration
-            aos_dt = datetime.strptime(
-                current_pass["aos"], "%Y-%m-%d %H:%M:%S UTC"
-            ).replace(tzinfo=timezone.utc)
-            los_dt = dt
-            duration = (los_dt - aos_dt).seconds
-
+            # Duration using raw UTC datetimes — no timezone confusion
+            duration = int((dt - aos_utc).total_seconds())
             current_pass["duration_seconds"] = duration
             current_pass["duration_minutes"] = round(duration / 60, 1)
 
@@ -100,30 +102,19 @@ def compute_passes(satellite_name: str, hours_ahead: int = 24) -> dict:
 
             passes.append(current_pass)
             current_pass = {}
+            aos_utc = None
 
     return {
         "satellite": satellite_name,
         "ground_station": GROUND_STATION["name"],
-        "computed_at": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "computed_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
         "hours_searched": hours_ahead,
         "total_passes": len(passes),
         "passes": passes
     }
 
 
-# Quick test
-from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-from dotenv import load_dotenv
-import json
-
-load_dotenv()
-
 def recommend_best_pass(satellite_name: str, hours_ahead: int = 24) -> dict:
-    """
-    Computes passes AND uses LLM to recommend the best one
-    with reasoning + confidence score.
-    """
     # Step 1: Get pass data
     pass_data = compute_passes(satellite_name, hours_ahead)
 
@@ -143,7 +134,7 @@ def recommend_best_pass(satellite_name: str, hours_ahead: int = 24) -> dict:
     prompt = ChatPromptTemplate.from_template("""
 You are SatOps, an expert satellite ground operations AI for Dhruva Space.
 
-Analyze these upcoming satellite passes and recommend the BEST one for scheduling 
+Analyze these upcoming satellite passes and recommend the BEST one for scheduling
 a communication/data downlink session.
 
 Satellite: {satellite}
@@ -169,9 +160,14 @@ Respond ONLY in this exact JSON format, no extra text:
         "passes": json.dumps(pass_data["passes"], indent=2)
     })
 
-    # Step 3: Parse + validate LLM response
+    # Step 3: Parse LLM response
     try:
-        llm_output = json.loads(response.content)
+        content = response.content.strip()
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        llm_output = json.loads(content.strip())
     except json.JSONDecodeError:
         llm_output = {
             "recommended_pass": 1,
@@ -192,6 +188,7 @@ Respond ONLY in this exact JSON format, no extra text:
     return {
         "satellite": satellite_name,
         "ground_station": pass_data["ground_station"],
+        "computed_at": pass_data["computed_at"],
         "total_passes": pass_data["total_passes"],
         "passes": pass_data["passes"],
         "ai_recommendation": llm_output

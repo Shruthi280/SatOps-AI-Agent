@@ -112,7 +112,7 @@ Severity must be exactly one of: INFO, WARNING, CRITICAL
         "flagged_sensors": flags,
         "ai_analysis": llm_output,
         "raw_telemetry": reading,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(IST).isoformat()
     }
 
 
